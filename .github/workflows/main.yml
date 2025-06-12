@@ -1,5 +1,5 @@
 # 工作流程名稱
-name: Python CI
+name: Python CI/CD with Docker
 
 # 觸發事件：當程式碼推送到 main 分支時，或手動觸發
 on:
@@ -9,35 +9,77 @@ on:
     branches: [ main ]
   workflow_dispatch: # 允許手動觸發
 
+# 定義環境變數，用於 Docker 映像檔的名稱和標籤
+env:
+  # Docker 映像檔名稱，通常為您的 GitHub 用戶名/儲存庫名稱 (例如: your-username/your-repo-name)
+  # 這將用於 GitHub Container Registry
+  IMAGE_NAME: ${{ github.repository }} # github.repository 會自動解析為 'username/repo-name'
+
 # 定義工作
 jobs:
-  # 這是一個名為 'build-and-test' 的工作
+  # CI 部分：建置和測試
   build-and-test:
-    # 在最新的 Ubuntu Runner 上執行
     runs-on: ubuntu-latest
 
-    # 定義工作中的步驟
     steps:
-      # 步驟 1: 檢出您的儲存庫程式碼
-      # 這是每個工作流程幾乎都會需要的第一步
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 步驟 2: 設定 Python 環境
-      # 'uses: actions/setup-python@v5' 是一個官方動作，用於安裝指定版本的 Python
-      # 'with' 用於向動作傳遞參數，這裡指定 Python 版本為 3.x
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x' # 可以指定具體版本如 '3.9', '3.10' 等
+          python-version: '3.9' # 指定具體 Python 版本
 
-      # 步驟 3: 安裝依賴
-      # 這裡假設您的專案依賴都列在 requirements.txt 中
-      # '-r' 旗標用於從檔案安裝
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 步驟 4: 執行測試
-      # 使用 'pytest' 命令來執行測試
       - name: Run tests
         run: pytest
+
+  # CD 部分：建置 Docker 映像檔並推送到 GitHub Container Registry
+  build-and-push-docker:
+    # 這個工作會在 'build-and-test' 工作成功後才執行
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 步驟 1: 登入 GitHub Container Registry
+      # secrets.GITHUB_TOKEN 是一個 GitHub Actions 自動提供的特殊 token
+      # 它允許工作流程與 GitHub API 互動，包括推送到 GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }} # github.actor 是觸發工作流程的用戶名
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 步驟 2: 獲取 Docker 映像檔標籤 (tag)
+      # 這裡我們使用提交的 SHA (短 hash) 作為標籤，這是一個唯一的標識
+      # 也可以使用 'latest' 或版本號
+      - name: Extract Docker metadata for tagging
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      # 步驟 3: 建置並推送到 Docker 映像檔
+      # 'push: true' 表示建置完成後立即推送到註冊表
+      # 'tags: ${{ steps.meta.outputs.tags }}' 使用上面定義的標籤
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Dockerfile 的路徑，'.' 表示當前目錄
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Docker image pushed confirmation
+        run: |
+          echo "Docker image ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} has been pushed."
+          echo "您可以到 GitHub 儲存庫的 'Packages' 頁面查看。"
