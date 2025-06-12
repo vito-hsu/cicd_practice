@@ -1,0 +1,43 @@
+# 工作流程名稱
+name: Python CI
+
+# 觸發事件：當程式碼推送到 main 分支時，或手動觸發
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # 允許手動觸發
+
+# 定義工作
+jobs:
+  # 這是一個名為 'build-and-test' 的工作
+  build-and-test:
+    # 在最新的 Ubuntu Runner 上執行
+    runs-on: ubuntu-latest
+
+    # 定義工作中的步驟
+    steps:
+      # 步驟 1: 檢出您的儲存庫程式碼
+      # 這是每個工作流程幾乎都會需要的第一步
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 步驟 2: 設定 Python 環境
+      # 'uses: actions/setup-python@v5' 是一個官方動作，用於安裝指定版本的 Python
+      # 'with' 用於向動作傳遞參數，這裡指定 Python 版本為 3.x
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # 可以指定具體版本如 '3.9', '3.10' 等
+
+      # 步驟 3: 安裝依賴
+      # 這裡假設您的專案依賴都列在 requirements.txt 中
+      # '-r' 旗標用於從檔案安裝
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 步驟 4: 執行測試
+      # 使用 'pytest' 命令來執行測試
+      - name: Run tests
+        run: pytest
